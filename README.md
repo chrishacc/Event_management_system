@@ -1,2 +1,2 @@
-# -C-
+# Event management system
 school work
