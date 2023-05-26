@@ -7,10 +7,13 @@
 #include <cctype>
 #include<queue>
 #include<map>
-
+#include <tuple>
+#include <opencv2/opencv.hpp>
 
 using namespace std;
+using namespace cv;
 
+//å‚èµ›é˜Ÿä¼ä¿¡æ¯ç»“æ„ä½“
 struct Team {
     string teamId;
     string projectName;
@@ -20,6 +23,7 @@ struct Team {
     string coach;
 };
 
+//äºŒå‰æ’åºæ ‘ç»“ç‚¹
 struct TreeNode {
     Team team;
     TreeNode* left;
@@ -30,6 +34,68 @@ TreeNode* root = nullptr;
 
 vector<Team> teams;
 
+//é˜Ÿåˆ—
+
+//é˜Ÿåˆ—ç»“ç‚¹
+struct QueueNode {
+    Team team;
+    QueueNode* next;
+};
+
+//é˜Ÿåˆ—çš„å®ç°
+class Queue {
+private:
+    QueueNode* front;
+    QueueNode* rear;
+public:
+    Queue() : front(nullptr), rear(nullptr) {}
+    ~Queue() {
+        while (!isEmpty()) {
+            dequeue();
+        }
+    }
+
+    void enqueue(const Team& team) {
+        QueueNode* newNode = new QueueNode;
+        newNode->team = team;
+        newNode->next = nullptr;
+
+        if (isEmpty()) {
+            front = rear = newNode;
+        }
+        else {
+            rear->next = newNode;
+            rear = newNode;
+        }
+    }
+    void dequeue() {
+        if (isEmpty()) {
+            return;
+        }
+
+        QueueNode* temp = front;
+        front = front->next;
+        delete temp;
+
+        if (front == nullptr) {
+            rear = nullptr;
+        }
+    }
+
+    Team frontElement() const {
+        if (isEmpty()) {
+            throw logic_error("é˜Ÿåˆ—ä¸ºç©º");
+        }
+
+        return front->team;
+    }
+
+    bool isEmpty() const {
+        return front == nullptr;
+    }
+};
+
+//äºŒå‰æ’åºæ ‘çš„æ’å…¥
 void insertTreeNode(TreeNode*& node, const Team& team) {
     if (node == nullptr) {
         node = new TreeNode;
@@ -47,24 +113,34 @@ void insertTreeNode(TreeNode*& node, const Team& team) {
     }
 }
 
-TreeNode* searchTreeNodeById(TreeNode* node, const string& teamId) {
+struct SearchResult {
+    TreeNode* node;
+    int length;
+};
+
+SearchResult searchTreeNodeById(TreeNode* node, const string& teamId, int length = 1) {
+    SearchResult result;
+
     if (node == nullptr || node->team.teamId == teamId) {
-        return node;
+        result.node = node;
+        result.length = length;
+        return result;
     }
 
     if (teamId < node->team.teamId) {
-        return searchTreeNodeById(node->left, teamId);
+        return searchTreeNodeById(node->left, teamId, length + 1);
     }
     else {
-        return searchTreeNodeById(node->right, teamId);
+        return searchTreeNodeById(node->right, teamId, length + 1);
     }
 }
 
+//åˆ é™¤å­—ç¬¦ä¸²ä¸­çš„ç©ºæ ¼
 string trim(const std::string& str) {
     size_t start = str.find_first_not_of(" \t\n\r");
     size_t end = str.find_last_not_of(" \t\n\r");
     if (start == std::string::npos || end == std::string::npos) {
-        return "";  // ×Ö·û´®ÖĞÖ»°üº¬¿Õ°××Ö·û
+        return "";  // å­—ç¬¦ä¸²ä¸­åªåŒ…å«ç©ºç™½å­—ç¬¦
     }
     return str.substr(start, end - start + 1);
 }
@@ -73,12 +149,12 @@ string trim(const std::string& str) {
 void loadTeamsFromFile() {
     ifstream file("team.txt");
     if (!file) {
-        cout << "ÎŞ·¨´ò¿ªÊı¾İÎÄ¼ş team.txt£¡" << endl;
+        cout << "æ— æ³•æ‰“å¼€æ•°æ®æ–‡ä»¶ team.txtï¼" << endl;
         return;
     }
 
     teams.clear();
-    root = nullptr; // Çå¿Õ¶ş²æÅÅĞòÊ÷
+    root = nullptr; // æ¸…ç©ºäºŒå‰æ’åºæ ‘
 
     string line;
     while (getline(file, line)) {
@@ -100,18 +176,18 @@ void loadTeamsFromFile() {
             team.coach = items[5];
 
             teams.push_back(team);
-            insertTreeNode(root, team); // ½«µ±Ç° Team ¶ÔÏó²åÈë¶ş²æÅÅĞòÊ÷ÖĞ
+            insertTreeNode(root, team); // å°†å½“å‰ Team å¯¹è±¡æ’å…¥äºŒå‰æ’åºæ ‘ä¸­
         }
     }
 
     file.close();
 }
 
-
+//ä¿å­˜å‚èµ›é˜Ÿä¼ä¿¡æ¯åˆ°æ–‡ä»¶
 void saveTeamsToFile() {
     ofstream file("team.txt");
     if (!file) {
-        cout << "ÎŞ·¨´´½¨Êı¾İÎÄ¼ş team.txt£¡" << endl;
+        cout << "æ— æ³•åˆ›å»ºæ•°æ®æ–‡ä»¶ team.txtï¼" << endl;
         return;
     }
 
@@ -123,28 +199,30 @@ void saveTeamsToFile() {
     file.close();
 }
 
+//å‚èµ›é˜Ÿä¼çš„æ·»åŠ 
 void addTeam() {
     Team team;
-    cout << "ÇëÊäÈë²ÎÈü¶Ó±àºÅ£º";
+    cout << "è¯·è¾“å…¥å‚èµ›é˜Ÿç¼–å·ï¼š";
     cin >> team.teamId;
-    cout << "ÇëÊäÈë²ÎÈü×÷Æ·Ãû³Æ£º";
+    cout << "è¯·è¾“å…¥å‚èµ›ä½œå“åç§°ï¼š";
     cin >> team.projectName;
-    cout << "ÇëÊäÈë²ÎÈüÑ§Ğ££º";
+    cout << "è¯·è¾“å…¥å‚èµ›å­¦æ ¡ï¼š";
     cin >> team.school;
-    cout << "ÇëÊäÈëÈüÊÂÀà±ğ£º";
+    cout << "è¯·è¾“å…¥èµ›äº‹ç±»åˆ«ï¼š";
     cin >> team.category;
-    cout << "ÇëÊäÈë²ÎÈüÕß£º";
+    cout << "è¯·è¾“å…¥å‚èµ›è€…ï¼š";
     cin >> team.participants;
-    cout << "ÇëÊäÈëÖ¸µ¼ÀÏÊ¦£º";
+    cout << "è¯·è¾“å…¥æŒ‡å¯¼è€å¸ˆï¼š";
     cin >> team.coach;
 
     teams.push_back(team);
-    cout << "²ÎÈü¶ÓÎéÌí¼Ó³É¹¦£¡" << endl;
+    cout << "å‚èµ›é˜Ÿä¼æ·»åŠ æˆåŠŸï¼" << endl;
 }
 
+//å‚èµ›é˜Ÿä¼çš„åˆ é™¤
 void deleteTeam() {
     string teamId;
-    cout << "ÇëÊäÈëÒªÉ¾³ıµÄ²ÎÈü¶Ó±àºÅ£º";
+    cout << "è¯·è¾“å…¥è¦åˆ é™¤çš„å‚èµ›é˜Ÿç¼–å·ï¼š";
     cin >> teamId;
 
     auto it = find_if(teams.begin(), teams.end(), [teamId](const Team& team) {
@@ -153,16 +231,17 @@ void deleteTeam() {
 
     if (it != teams.end()) {
         teams.erase(it);
-        cout << "²ÎÈü¶ÓÎéÉ¾³ı³É¹¦£¡" << endl;
+        cout << "å‚èµ›é˜Ÿä¼åˆ é™¤æˆåŠŸï¼" << endl;
     }
     else {
-        cout << "Î´ÕÒµ½ÒªÉ¾³ıµÄ²ÎÈü¶ÓÎé£¡" << endl;
+        cout << "æœªæ‰¾åˆ°è¦åˆ é™¤çš„å‚èµ›é˜Ÿä¼ï¼" << endl;
     }
 }
 
+//å‚èµ›é˜Ÿä¼çš„ä¿®æ”¹
 void modifyTeam() {
     string teamId;
-    cout << "ÇëÊäÈëÒªĞŞ¸ÄµÄ²ÎÈü¶Ó±àºÅ£º";
+    cout << "è¯·è¾“å…¥è¦ä¿®æ”¹çš„å‚èµ›é˜Ÿç¼–å·ï¼š";
     cin >> teamId;
 
     auto it = find_if(teams.begin(), teams.end(), [teamId](const Team& team) {
@@ -170,49 +249,101 @@ void modifyTeam() {
         });
 
     if (it != teams.end()) {
-        cout << "ÇëÊäÈëĞÂµÄ²ÎÈü×÷Æ·Ãû³Æ£º";
+        cout << "è¯·è¾“å…¥æ–°çš„å‚èµ›ä½œå“åç§°ï¼š";
         cin >> it->projectName;
-        cout << "ÇëÊäÈëĞÂµÄ²ÎÈüÑ§Ğ££º";
+        cout << "è¯·è¾“å…¥æ–°çš„å‚èµ›å­¦æ ¡ï¼š";
         cin >> it->school;
-        cout << "ÇëÊäÈëĞÂµÄÈüÊÂÀà±ğ£º";
+        cout << "è¯·è¾“å…¥æ–°çš„èµ›äº‹ç±»åˆ«ï¼š";
         cin >> it->category;
-        cout << "ÇëÊäÈëĞÂµÄ²ÎÈüÕß£º";
+        cout << "è¯·è¾“å…¥æ–°çš„å‚èµ›è€…ï¼š";
         cin >> it->participants;
-        cout << "ÇëÊäÈëĞÂµÄÖ¸µ¼ÀÏÊ¦£º";
+        cout << "è¯·è¾“å…¥æ–°çš„æŒ‡å¯¼è€å¸ˆï¼š";
         cin >> it->coach;
 
-        cout << "²ÎÈü¶ÓÎéĞŞ¸Ä³É¹¦£¡" << endl;
+        cout << "å‚èµ›é˜Ÿä¼ä¿®æ”¹æˆåŠŸï¼" << endl;
     }
     else {
-        cout << "Î´ÕÒµ½ÒªĞŞ¸ÄµÄ²ÎÈü¶ÓÎé£¡" << endl;
+        cout << "æœªæ‰¾åˆ°è¦ä¿®æ”¹çš„å‚èµ›é˜Ÿä¼ï¼" << endl;
     }
 }
 
+//æ ¹æ®å‚èµ›é˜Ÿä¼ç¼–å·æŸ¥è¯¢
 void searchTeamById() {
     string teamId;
-    cout << "ÇëÊäÈëÒª²éÑ¯µÄ²ÎÈü¶Ó±àºÅ£º";
+    cout << "è¯·è¾“å…¥è¦æŸ¥è¯¢çš„å‚èµ›é˜Ÿç¼–å·ï¼š";
     cin >> teamId;
 
-    TreeNode* result = searchTreeNodeById(root, teamId);
+    SearchResult searchResult = searchTreeNodeById(root, teamId);
+    TreeNode* result = searchResult.node;
+    int asl = searchResult.length;
 
     if (result != nullptr) {
         Team& team = result->team;
-        cout << "²ÎÈü¶Ó±àºÅ£º" << team.teamId << endl;
-        cout << "²ÎÈü×÷Æ·Ãû³Æ£º" << team.projectName << endl;
-        cout << "²ÎÈüÑ§Ğ££º" << team.school << endl;
-        cout << "ÈüÊÂÀà±ğ£º" << team.category << endl;
-        cout << "²ÎÈüÕß£º" << team.participants << endl;
-        cout << "Ö¸µ¼ÀÏÊ¦£º" << team.coach << endl;
+        cout << "å‚èµ›é˜Ÿç¼–å·ï¼š" << team.teamId << endl;
+        cout << "å‚èµ›ä½œå“åç§°ï¼š" << team.projectName << endl;
+        cout << "å‚èµ›å­¦æ ¡ï¼š" << team.school << endl;
+        cout << "èµ›äº‹ç±»åˆ«ï¼š" << team.category << endl;
+        cout << "å‚èµ›è€…ï¼š" << team.participants << endl;
+        cout << "æŒ‡å¯¼è€å¸ˆï¼š" << team.coach << endl;
+
+        cout << "å¹³å‡æŸ¥æ‰¾é•¿åº¦ ASLï¼š" << asl << endl;
     }
     else {
-        cout << "Î´ÕÒµ½¸Ã²ÎÈü¶ÓÎé£¡" << endl;
+        cout << "æœªæ‰¾åˆ°è¯¥å‚èµ›é˜Ÿä¼ï¼" << endl;
     }
 }
 
+//æ ¹æ®å‚èµ›é˜Ÿä¼æ‰€å±å­¦æ ¡æŸ¥è¯¢å‚èµ›é˜Ÿä¼
 
+//æ¯”è¾ƒå­¦æ ¡åç§°
+bool compareSchool(const string& school1, const string& school2) {
+    int len1 = school1.length();
+    int len2 = school2.length();
+    int minLen = min(len1, len2);
+
+    for (int i = 0; i < minLen; i++) {
+        if (school1[i] < school2[i]) {
+            return true;
+        }
+        else if (school1[i] > school2[i]) {
+            return false;
+        }
+    }
+
+    return len1 <= len2;
+}
+
+//å¿«é€Ÿæ’åºçš„åˆ†åŒºå‡½æ•°
+int partition(vector<Team>& teams, int left, int right) {
+    Team pivot = teams[right];  // é€‰æ‹©æœ€å³è¾¹çš„å…ƒç´ ä½œä¸ºåŸºå‡†å…ƒç´ 
+    int i = left - 1;
+
+    for (int j = left; j < right; j++) {
+        if (compareSchool(teams[j].school, pivot.school)) {
+            i++;
+            swap(teams[i], teams[j]);
+        }
+    }
+
+    swap(teams[i + 1], teams[right]);
+    return i + 1;
+}
+
+//å¿«é€Ÿæ’åº
+void quickSort(vector<Team>& teams, int left, int right) {
+    if (left >= right) {
+        return;
+    }
+
+    int pivotIndex = partition(teams, left, right);
+    quickSort(teams, left, pivotIndex - 1);
+    quickSort(teams, pivotIndex + 1, right);
+}
+
+//æ ¹æ®å­¦æ ¡æŸ¥æ‰¾å‚èµ›é˜Ÿä¼ä¸»å‡½æ•°
 void searchTeamsBySchool() {
     string school;
-    cout << "ÇëÊäÈë²ÎÈüÑ§Ğ£Ãû³Æ£º";
+    cout << "è¯·è¾“å…¥å‚èµ›å­¦æ ¡åç§°ï¼š";
     cin >> school;
 
     vector<Team> matchedTeams;
@@ -223,94 +354,244 @@ void searchTeamsBySchool() {
     }
 
     if (!matchedTeams.empty()) {
-        cout << "°´²ÎÈüÑ§Ğ£²éÑ¯½á¹û£º" << endl;
-        // ÅÅĞò
-        // Ñ¡ÔñÅÅĞòÊ¾Àı£¬Äú¿ÉÒÔ¸ù¾İĞèÇóÑ¡ÔñÆäËûÅÅĞòËã·¨
-        for (int i = 0; i < matchedTeams.size() - 1; i++) {
-            int minIndex = i;
-            for (int j = i + 1; j < matchedTeams.size(); j++) {
-                if (matchedTeams[j].category < matchedTeams[minIndex].category) {
-                    minIndex = j;
-                }
-            }
-            if (minIndex != i) {
-                swap(matchedTeams[i], matchedTeams[minIndex]);
-            }
-        }
+        cout << "æŒ‰å‚èµ›å­¦æ ¡æŸ¥è¯¢ç»“æœï¼š" << endl;
 
-        // Êä³ö½á¹û
+        // å¿«é€Ÿæ’åº
+        quickSort(matchedTeams, 0, matchedTeams.size() - 1);
+
+        // è¾“å‡ºç»“æœ
         for (const auto& team : matchedTeams) {
-            cout << "²ÎÈü¶Ó±àºÅ£º" << team.teamId << endl;
-            cout << "²ÎÈü×÷Æ·Ãû³Æ£º" << team.projectName << endl;
-            cout << "ÈüÊÂÀà±ğ£º" << team.category << endl;
-            cout << "²ÎÈüÕß£º" << team.participants << endl;
-            cout << "Ö¸µ¼ÀÏÊ¦£º" << team.coach << endl;
+            cout << "å‚èµ›é˜Ÿç¼–å·ï¼š" << team.teamId << endl;
+            cout << "å‚èµ›ä½œå“åç§°ï¼š" << team.projectName << endl;
+            cout << "èµ›äº‹ç±»åˆ«ï¼š" << team.category << endl;
+            cout << "å‚èµ›è€…ï¼š" << team.participants << endl;
+            cout << "æŒ‡å¯¼è€å¸ˆï¼š" << team.coach << endl;
             cout << "----------------------------------------" << endl;
         }
     }
     else {
-        cout << "Î´ÕÒµ½·ûºÏÌõ¼şµÄ²ÎÈü¶ÓÎé£¡" << endl;
+        cout << "æœªæ‰¾åˆ°ç¬¦åˆæ¡ä»¶çš„å‚èµ›é˜Ÿä¼ï¼" << endl;
     }
 }
 
-// ¾öÈü½ĞºÅÏµÍ³
+// å†³èµ›å«å·ç³»ç»Ÿ
 void callFinalRooms() {
-    map<string, vector<Team>> finalRooms;  // Ê¹ÓÃ map ´æ´¢¾öÈüÊÒ£¬¼üÎªÈüÊÂÀà±ğ
-    int currentRoom = 0;  // µ±Ç°½ĞºÅµÄ¾öÈüÊÒË÷Òı
+    map<string, Queue> finalRooms;  // å†³èµ›å®¤é˜Ÿåˆ—ï¼ŒæŒ‰èµ›äº‹ç±»åˆ«å­˜å‚¨å‚èµ›é˜Ÿä¼
+    vector<string> categories;  // èµ›äº‹ç±»åˆ«åˆ—è¡¨
 
-    // ½«²ÎÈü¶Ó°´ÈüÊÂÀà±ğ·ÖÅäµ½¾öÈüÊÒ
+    // å°†å‚èµ›é˜Ÿä¼æŒ‰èµ›äº‹ç±»åˆ«å­˜å‚¨åˆ°å†³èµ›å®¤é˜Ÿåˆ—ä¸­
     for (const auto& team : teams) {
-        finalRooms[team.category].push_back(team);
+        finalRooms[team.category].enqueue(team);
+        if (find(categories.begin(), categories.end(), team.category) == categories.end()) {
+            categories.push_back(team.category);
+        }
     }
 
-    // °´Ë³Ğò½ĞºÅ²¢½ø³¡
-    for (const auto& room : finalRooms) {
-        cout << "================== ¾öÈüÊÒ " << room.first << " ==================" << endl;
-        cout << "²ÎÈü¶ÓÎé½ø³¡Ë³Ğò£º" << endl;
+    // æŒ‰é¡ºåºå«å·ï¼Œå‚èµ›é˜Ÿä¼è¿›åœº
+    for (const auto& category : categories) {
+        cout << "èµ›äº‹ç±»åˆ«ï¼š" << category << endl;
+        cout << endl;
+        Queue& roomQueue = finalRooms[category];
 
-        for (const auto& team : room.second) {
-            cout << "²ÎÈü¶Ó±àºÅ£º" << team.teamId << endl;
-            cout << "²ÎÈü×÷Æ·Ãû³Æ£º" << team.projectName << endl;
-            cout << "²ÎÈüÑ§Ğ££º" << team.school << endl;
-            cout << "ÈüÊÂÀà±ğ£º" << team.category << endl;
-            cout << "²ÎÈüÕß£º" << team.participants << endl;
-            cout << "Ö¸µ¼ÀÏÊ¦£º" << team.coach << endl;
-            cout << "----------------------------------------" << endl;
+        while (!roomQueue.isEmpty()) {
+            Team team = roomQueue.frontElement();
+            roomQueue.dequeue();
 
-            // µÈ´ı±ÈÈü½áÊø£¬°´ÈÎÒâ¼ü¼ÌĞø
-            cout << "±ÈÈü½áÊø£¬Çë°´ÈÎÒâ¼ü¼ÌĞøÏÂÒ»Ö§²ÎÈü¶ÓÎé½ø³¡...";
-            cin.ignore();  // ºöÂÔÖ®Ç°µÄ»»ĞĞ·û
-            cin.get();  // µÈ´ı°´¼üÊäÈë
+
+            cout << "é˜Ÿä¼ç¼–å·ï¼š" << team.teamId << "ï¼Œé¡¹ç›®åç§°ï¼š" << team.projectName << endl;
+            // è¿›åœºæ“ä½œ
+            cout << "å‚èµ›é˜Ÿä¼è¿›å…¥èµ›åœº..." << endl;
+            // è¿›è¡Œæ¯”èµ›...
+            cout <<"å‚èµ›é˜Ÿä¼æ¯”èµ›å®Œæ¯•" << endl;
+            // æ¯”èµ›ç»“æŸåï¼Œç­‰å¾…ä¸‹ä¸€å‚èµ›é˜Ÿä¼è¿›åœº
+            if (!roomQueue.isEmpty()) {
+                cout << "ç­‰å¾…ä¸‹ä¸€å‚èµ›é˜Ÿä¼è¿›åœº..." << endl;
+                cout << "------------------------" << endl;
+            }
         }
 
-        cout << "ËùÓĞ²ÎÈü¶ÓÎéÒÑ½ø³¡²¢±ÈÈü½áÊø£¡" << endl;
         cout << endl;
     }
 }
 
 
+// æ ¡å›­å¯¼æ¸¸ç¨‹åº
 
-// Ğ£Ô°µ¼ÓÎ³ÌĞò
+// å®šä¹‰æ ¡å›­åœ°ç‚¹åŠå…¶åæ ‡çš„ç»“æ„ä½“
+struct CampusLocation {
+    Point coordinates;
+    string description;
+};
+
+// è‡ªå®šä¹‰æ¯”è¾ƒå‡½æ•°ï¼Œç”¨äºä¼˜å…ˆé˜Ÿåˆ—çš„æœ€å°å †
+struct CompareDistance {
+    bool operator()(const pair<string, int>& a, const pair<string, int>& b) {
+        return a.second > b.second;
+    }
+};
+
 void navigateCampus() {
-    // ÊµÏÖĞ£Ô°µ¼ÓÎ³ÌĞòµÄÂß¼­
+    // æ ¡å›­åœ°å›¾å’Œåœ°ç‚¹ä¹‹é—´çš„è¿æ¥å…³ç³»åŠæƒå€¼
+    map<string, CampusLocation> campus_map = {
+        {"åå‹¤æœåŠ¡æ¥¼", {Point(79, 206), "åå‹¤æœåŠ¡æ¥¼"}},
+        {"è¥¿é—¨", {Point(403, 179), "è¥¿é—¨"}},
+        {"å¤§å­¦ç”Ÿæ´»åŠ¨ä¸­å¿ƒ", {Point(211, 354), "å¤§å­¦ç”Ÿæ´»åŠ¨ä¸­å¿ƒ"}},
+        {"æ˜å¾·æ¥¼", {Point(403, 263), "æ˜å¾·æ¥¼"}},
+        {"æ ¡è®­ç¢‘", {Point(302, 480), "æ ¡è®­ç¢‘"}},
+        {"æ–‡ç†å¤§æ¥¼", {Point(563, 264), "æ–‡ç†å¤§æ¥¼"}},
+        {"è®¡ç®—æœºå­¦é™¢æ¥¼", {Point(652, 214), "è®¡ç®—æœºå­¦é™¢æ¥¼"}},
+        {"å›¾ä¹¦é¦†", {Point(622, 387), "å›¾ä¹¦é¦†"}},
+        {"ä¸œé—¨", {Point(736, 532), "ä¸œé—¨"}},
+        {"è¡Œæ”¿å¤§æ¥¼", {Point(991, 168), "è¡Œæ”¿å¤§æ¥¼"}}
+    };
 
+    map<pair<string, string>, int> connectivity = {
+        {{"åå‹¤æœåŠ¡æ¥¼", "è¥¿é—¨"}, 500},
+        {{"åå‹¤æœåŠ¡æ¥¼", "å¤§å­¦ç”Ÿæ´»åŠ¨ä¸­å¿ƒ"}, 300},
+        {{"å¤§å­¦ç”Ÿæ´»åŠ¨ä¸­å¿ƒ", "æ˜å¾·æ¥¼"}, 200},
+        {{"è¥¿é—¨", "æ˜å¾·æ¥¼"}, 100},
+        {{"å¤§å­¦ç”Ÿæ´»åŠ¨ä¸­å¿ƒ", "æ ¡è®­ç¢‘"}, 250},
+        {{"æ˜å¾·æ¥¼", "æ–‡ç†å¤§æ¥¼"}, 100},
+        {{"æ ¡è®­ç¢‘", "å›¾ä¹¦é¦†"}, 500},
+        {{"æ–‡ç†å¤§æ¥¼", "å›¾ä¹¦é¦†"}, 200},
+        {{"æ–‡ç†å¤§æ¥¼", "è®¡ç®—æœºå­¦é™¢æ¥¼"}, 100},
+        {{"å›¾ä¹¦é¦†", "ä¸œé—¨"}, 250},
+        {{"è®¡ç®—æœºå­¦é™¢æ¥¼", "è¡Œæ”¿å¤§æ¥¼"}, 500}
+    };
 
+    // å¯¼èˆªåŠŸèƒ½
+    auto navigate = [&](const string& start, const string& end) {
+        // åˆ›å»ºè·ç¦»å­—å…¸ï¼Œåˆå§‹è·ç¦»è®¾ä¸ºæ— ç©·å¤§
+        map<string, int> distance;
+        for (const auto& place : campus_map) {
+            distance[place.first] = INT_MAX;
+        }
+        distance[start] = 0;
+
+        // åˆ›å»ºä¼˜å…ˆé˜Ÿåˆ—ï¼Œç”¨äºé€‰æ‹©æœ€å°è·ç¦»çš„ä¸‹ä¸€ä¸ªèŠ‚ç‚¹
+        priority_queue<pair<string, int>, vector<pair<string, int>>, CompareDistance> pq;
+        pq.push({ start, 0 });
+
+        // åˆ›å»ºçˆ¶èŠ‚ç‚¹å­—å…¸ï¼Œç”¨äºè®°å½•æœ€çŸ­è·¯å¾„
+        map<string, string> parent;
+        parent[start] = "";
+
+        while (!pq.empty()) {
+            string current = pq.top().first;
+            int curr_distance = pq.top().second;
+            pq.pop();
+
+            if (current == end) {
+                break;  // åˆ°è¾¾ç›®æ ‡åœ°ç‚¹ï¼Œåœæ­¢æœç´¢
+            }
+
+            for (const auto& connection : connectivity) {
+                string src = connection.first.first;
+                string dest = connection.first.second;
+                int weight = connection.second;
+
+                if (src == current && curr_distance + weight < distance[dest]) {
+                    distance[dest] = curr_distance + weight;
+                    parent[dest] = src;
+                    pq.push({ dest, distance[dest] });
+                }
+
+                if (dest == current && curr_distance + weight < distance[src]) {
+                    distance[src] = curr_distance + weight;
+                    parent[src] = dest;
+                    pq.push({ src, distance[src] });
+                }
+            }
+        }
+
+        // ä»ç»ˆç‚¹å›æº¯è·å–æœ€çŸ­è·¯å¾„
+        int shortest_distance = distance[end];
+        Point start_coord = campus_map[start].coordinates;
+        Point end_coord = campus_map[end].coordinates;
+        string current = end;
+        vector<string> path;
+        while (current != start) {
+            path.push_back(current);
+            current = parent[current];
+        }
+        path.push_back(start);
+        reverse(path.begin(), path.end());
+
+        return make_tuple(shortest_distance, start_coord, end_coord, path);
+    };
+
+    // ç›®æ ‡åœ°å¯¼èˆª
+    cout << "æ¬¢è¿æ¥åˆ°æ ¡å›­å¯¼æ¸¸ç¨‹åºï¼" << endl;
+    cout << "ä»¥ä¸‹æ˜¯æ ¡å›­åœ°å›¾ä¸­çš„ä¸€äº›ç›®æ ‡åœ°ï¼š" << endl;
+    for (const auto& place : campus_map) {
+        cout << place.second.description << endl;
+    }
+
+    // ä»»æ„ä¸¤ä¸ªç›®æ ‡åœ°å¯¼èˆªæŸ¥è¯¢
+    while (true) {
+        string start_place, end_place;
+        cout << "è¯·è¾“å…¥èµ·ç‚¹å»ºç­‘ç‰©åç§°ï¼š";
+        cin >> start_place;
+        cout << "è¯·è¾“å…¥ç»ˆç‚¹å»ºç­‘ç‰©åç§°ï¼š";
+        cin >> end_place;
+
+        if (campus_map.count(start_place) && campus_map.count(end_place)) {
+            int distance;
+            Point start_coord, end_coord;
+            vector<string> path;
+            tie(distance, start_coord, end_coord, path) = navigate(start_place, end_place);
+            cout << "ä» " << start_place << " åˆ° " << end_place << " çš„æœ€çŸ­è·¯å¾„è·ç¦»ä¸ºï¼š " << distance << endl;
+
+            // è¾“å‡ºæœ€çŸ­è·¯å¾„
+            cout << "æœ€çŸ­è·¯å¾„ä¸ºï¼š";
+            for (const auto& place : path) {
+                cout << place << "  ->  ";
+            }
+            cout << endl;
+
+            // è¯»å–ç°æœ‰æ ¡å›­åœ°å›¾å›¾ç‰‡
+            Mat image = imread("campus_map.jpg");
+
+            // åœ¨å›¾ç‰‡ä¸Šç»˜åˆ¶å¯¼èˆªè·¯çº¿
+            for (size_t i = 1; i < path.size(); i++) {
+                Point start = campus_map[path[i - 1]].coordinates;
+                Point end = campus_map[path[i]].coordinates;
+                line(image, start, end, Scalar(0, 255, 0), 3);
+            }
+
+            // æ˜¾ç¤ºå›¾ç‰‡
+            namedWindow("Campus Map with Route", WINDOW_NORMAL);
+            imshow("Campus Map with Route", image);
+            waitKey(0);
+
+            // ä¿å­˜ä¿®æ”¹åçš„å›¾ç‰‡
+            imwrite("campus_map_with_route.jpg", image);
+
+            cout << "å¯¼èˆªè·¯çº¿å·²åœ¨å›¾ç‰‡ä¸Šæ˜¾ç¤ºï¼Œå¹¶ä¿å­˜ä¸º campus_map_with_route.jpg" << endl;
+            break;
+        }
+        else {
+            cout << "è¾“å…¥çš„å»ºç­‘ç‰©åç§°æœ‰è¯¯ï¼Œè¯·é‡æ–°è¾“å…¥ï¼" << endl;
+        }
+    }
 }
+
 
 int main() {
     loadTeamsFromFile();
 
     while (true) {
-        cout << "================== ÈüÊÂ¹ÜÀíÏµÍ³ ==================" << endl;
-        cout << "1. Ìí¼Ó²ÎÈü¶ÓÎé" << endl;
-        cout << "2. É¾³ı²ÎÈü¶ÓÎé" << endl;
-        cout << "3. ĞŞ¸Ä²ÎÈü¶ÓÎé" << endl;
-        cout << "4. °´²ÎÈü¶Ó±àºÅ²éÑ¯²ÎÈü¶ÓÎé" << endl;
-        cout << "5. °´²ÎÈüÑ§Ğ£²éÑ¯²ÎÈü¶ÓÎé" << endl;
-        cout << "6. ¾öÈü½ĞºÅÏµÍ³" << endl;
-        cout << "0. ÍË³öÏµÍ³" << endl;
+        cout << "================== èµ›äº‹ç®¡ç†ç³»ç»Ÿ ==================" << endl;
+        cout << "1. æ·»åŠ å‚èµ›é˜Ÿä¼" << endl;
+        cout << "2. åˆ é™¤å‚èµ›é˜Ÿä¼" << endl;
+        cout << "3. ä¿®æ”¹å‚èµ›é˜Ÿä¼" << endl;
+        cout << "4. æŒ‰å‚èµ›é˜Ÿç¼–å·æŸ¥è¯¢å‚èµ›é˜Ÿä¼" << endl;
+        cout << "5. æŒ‰å‚èµ›å­¦æ ¡æŸ¥è¯¢å‚èµ›é˜Ÿä¼" << endl;
+        cout << "6. å†³èµ›å«å·ç³»ç»Ÿ" << endl;
+        cout << "7. æ ¡å›­å¯¼æ¸¸ç¨‹åº" << endl;
+        cout << "0. é€€å‡ºç³»ç»Ÿ" << endl;
         cout << "=================================================" << endl;
-        cout << "ÇëÊäÈë²Ù×÷Ñ¡Ïî£º";
+        cout << "è¯·è¾“å…¥æ“ä½œé€‰é¡¹ï¼š";
 
         int option;
         cin >> option;
@@ -337,11 +618,14 @@ int main() {
         case 6:
             callFinalRooms();
             break;
+        case 7:
+            navigateCampus();
+			break;
         case 0:
-            cout << "¸ĞĞ»Ê¹ÓÃÈüÊÂ¹ÜÀíÏµÍ³£¡ÔÙ¼û£¡" << endl;
+            cout << "æ„Ÿè°¢ä½¿ç”¨èµ›äº‹ç®¡ç†ç³»ç»Ÿï¼å†è§ï¼" << endl;
             return 0;
         default:
-            cout << "ÎŞĞ§µÄ²Ù×÷Ñ¡Ïî£¡ÇëÖØĞÂÊäÈë¡£" << endl;
+            cout << "æ— æ•ˆçš„æ“ä½œé€‰é¡¹ï¼è¯·é‡æ–°è¾“å…¥ã€‚" << endl;
             break;
         }
 
